@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AI Jobs</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/static/site.css" />
 </head>
 <body>
@@ -17,13 +18,24 @@
   <div id="notice" hidden></div>
   <main id="app" aria-live="polite"></main>
 
-  <!-- The voice assistant. static/voice.js joins a LiveKit room, plays the agent's audio, and
-       forwards every message it sends (topic "ui") to one SITE method in site.js. -->
-  <div id="voice" role="region" aria-label="Voice assistant">
-    <span id="voice-dot" title="Lights up while LiveKit is receiving your microphone"></span>
-    <span id="voice-label">Talk to the assistant</span>
-    <button id="voice-btn" type="button">Start</button>
-  </div>
+  <!-- The assistant. static/voice.js joins a LiveKit room, shows the avatar's video here, plays its
+       voice, and forwards every message the agent sends (topic "ui") to one SITE method in site.js. -->
+  <aside id="assistant" aria-label="Voice assistant">
+    <div class="stage">
+      <video id="avatar-video" autoplay playsinline></video>
+      <div class="placeholder">
+        <div class="orb" aria-hidden="true"></div>
+        <p class="hello">Tell me what you're looking for</p>
+        <p class="hello-sub">I'll search the jobs and open the right one for you.</p>
+      </div>
+      <button id="sound-btn" type="button" hidden>Tap to hear the assistant</button>
+    </div>
+    <div class="bar">
+      <span id="voice-dot" title="Lights up while LiveKit is receiving your microphone"></span>
+      <span id="voice-label">Talk to your job assistant</span>
+      <button id="voice-btn" type="button">Start</button>
+    </div>
+  </aside>
 
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
   <script src="/static/site.js"></script>

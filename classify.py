@@ -231,6 +231,8 @@ def enrich(job: dict) -> dict:
         "posted": _iso(job.get("posted")),
         "summary": summary,
         "body": body,
-        "has_description": bool(desc),
+        # True only when there is real text left after the boilerplate is removed. A scrape that caught
+        # just the page header (title, pay, skills) counts as "no description", so the page can say so.
+        "has_description": bool(body),
         "search_text": search_text,
     }

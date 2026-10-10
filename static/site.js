@@ -6,6 +6,9 @@
  *
  * Data comes only from /api/jobs, which reads scraped_jobs.json. Nothing here depends on which
  * jobs, categories or skills exist, so a new scrape shows up with no frontend change.
+ *
+ * Open the site with ?dev=1 (http://localhost:8080/?dev=1) for a panel that plays the agent's part
+ * with buttons, so you can test the page movement without voice and without the browser console.
  */
 (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -107,6 +110,8 @@
 
   function renderPicksBanner() {
     const el = $("#picks");
+    const hero = $("#hero");
+    if (hero) hero.hidden = !!state.picks; // the assistant's picks replace the invitation to talk
     if (!el) return;
     if (!state.picks) {
       el.innerHTML = "";
@@ -198,7 +203,16 @@
 
   function showList() {
     document.title = "AI Jobs";
-    app.innerHTML = `<div id="picks"></div><div id="filters" class="filters"></div><div id="meta" class="meta"></div><div id="grid" class="grid"></div>`;
+    app.innerHTML = `
+      <section class="hero" id="hero">
+        <div>
+          <h1>Tell the assistant what you want. It finds the job and opens it for you.</h1>
+          <p>Say your field, pay and hours out loud. It searches the board, recommends the best match and takes you straight to it.</p>
+        </div>
+        <button class="btn big" type="button" id="hero-start">Talk to the assistant</button>
+      </section>
+      <div id="picks"></div><div id="filters" class="filters"></div><div id="meta" class="meta"></div><div id="grid" class="grid"></div>`;
+    $("#hero-start").addEventListener("click", () => window.VOICE?.toggle());
     renderFilters();
     $("#filters").addEventListener("change", (e) => {
       const key = e.target.dataset.key;
@@ -219,9 +233,11 @@
   // ------------------------------------------------------------------ detail view
   function detailHtml(job) {
     const skills = job.skills.map((s) => `<li>${esc(s)}</li>`).join("");
+    const original = esc(safeUrl(job.url));
     const body = job.has_description
       ? renderBody(job.body)
-      : '<p class="nodesc">The full description could not be scraped for this job. Open the original posting to read it.</p>';
+      : `<p class="nodesc">The scraper only captured the top of this posting, not its description, so there is nothing to show here yet.
+           <a href="${original}" target="_blank" rel="noopener noreferrer">Read the full posting on ${esc(job.company)} ↗</a></p>`;
     return `
       <article class="detail">
         <a class="back" href="#/">← ${state.picks ? "Back to the assistant's picks" : "All jobs"}</a>
@@ -233,6 +249,7 @@
         ${skills ? `<ul class="chips">${skills}</ul>` : ""}
         <div class="actions">
           <a id="apply" class="btn big" href="${esc(safeUrl(job.apply_url || job.url))}" target="_blank" rel="noopener noreferrer">Apply on ${esc(job.company)} ↗</a>
+          ${job.has_description ? `<a class="btn outline" href="${original}" target="_blank" rel="noopener noreferrer">Read the original posting ↗</a>` : ""}
         </div>
         <div class="body">${body}</div>
       </article>`;
@@ -349,6 +366,39 @@
   }
 
   window.SITE = { show_results, show_job, highlight_apply, show_all, status };
+
+  // ------------------------------------------------------------------ test panel (?dev=1)
+  // Plays the agent's part with buttons, so the page can be tested with no voice and no console.
+  function mountDevPanel() {
+    const panel = document.createElement("div");
+    panel.className = "devpanel";
+    panel.innerHTML = `
+      <strong>Test the page (no voice)</strong>
+      <button type="button" data-t="picks">1. Show 3 picks</button>
+      <button type="button" data-t="job">2. Open the first pick</button>
+      <button type="button" data-t="apply">3. Pulse the Apply button</button>
+      <button type="button" data-t="all">4. Back to all jobs</button>`;
+    document.body.appendChild(panel);
+    let ids = [];
+    panel.addEventListener("click", async (e) => {
+      const t = e.target.dataset.t;
+      if (!t) return;
+      if (!ids.length) {
+        try {
+          ids = (await api("/api/jobs", { limit: 3 })).jobs.map((j) => j.id);
+        } catch (err) {
+          console.error("dev panel: could not load jobs", err);
+          return;
+        }
+      }
+      if (!ids.length) return;
+      if (t === "picks") window.SITE.show_results({ ids });
+      if (t === "job") window.SITE.show_job({ job_id: ids[0] });
+      if (t === "apply") window.SITE.highlight_apply({ job_id: ids[0] });
+      if (t === "all") window.SITE.show_all();
+    });
+  }
+  if (new URLSearchParams(location.search).has("dev")) mountDevPanel();
 
   // ------------------------------------------------------------------ start
   api("/api/version").then((v) => (state.version = state.version || v.version)).catch(() => {});

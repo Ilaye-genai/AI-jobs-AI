@@ -89,7 +89,8 @@ def token() -> dict:
         api.AccessToken(key, secret)
         .with_identity(f"visitor-{uuid.uuid4().hex[:8]}")
         .with_grants(api.VideoGrants(room_join=True, room=room))
-        .with_room_config(api.RoomConfiguration(agents=[api.RoomAgentDispatch(agent_name=AGENT_NAME)]))
+        # sync_streams keeps the avatar's lips in step with its voice
+        .with_room_config(api.RoomConfiguration(sync_streams=True, agents=[api.RoomAgentDispatch(agent_name=AGENT_NAME)]))
         .to_jwt()
     )
     return {"url": url, "token": jwt, "room": room}
