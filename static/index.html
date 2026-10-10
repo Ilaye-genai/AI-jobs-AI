@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Jobs</title>
+  <link rel="stylesheet" href="/static/site.css" />
+</head>
+<body>
+  <!-- The job board. Everything in #app is built by static/site.js from /api/jobs, which reads
+       scraped_jobs.json, so a new scrape shows up here with no frontend change. -->
+  <header class="top">
+    <a class="brand" href="#/">AI&nbsp;Jobs</a>
+    <input id="q" type="search" placeholder="Search jobs, skills, fields…" aria-label="Search jobs" autocomplete="off" />
+  </header>
+
+  <div id="notice" hidden></div>
+  <main id="app" aria-live="polite"></main>
+
+  <!-- The voice assistant. static/voice.js joins a LiveKit room, plays the agent's audio, and
+       forwards every message it sends (topic "ui") to one SITE method in site.js. -->
+  <div id="voice" role="region" aria-label="Voice assistant">
+    <span id="voice-dot" title="Lights up while LiveKit is receiving your microphone"></span>
+    <span id="voice-label">Talk to the assistant</span>
+    <button id="voice-btn" type="button">Start</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <script src="/static/site.js"></script>
+  <script src="/static/voice.js"></script>
+</body>
+</html>
