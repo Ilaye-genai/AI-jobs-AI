@@ -63,7 +63,7 @@ def make_tools(send: Send) -> list:
         week". Returns the matching jobs, best match first, each with its Job ID. Only Job IDs returned
         here are valid.
         """
-        await _safe_send(send, {"action": "status", "text": "Searching jobs…"})
+        await _safe_send(send, {"action": "status", "text": "Searching jobs…", "kind": "search"})
         pq = parse_query(query)
         after = datetime.now(timezone.utc) - timedelta(days=pq.days) if pq.days else None
         try:
@@ -83,6 +83,8 @@ def make_tools(send: Send) -> list:
             return ("The search found jobs, but none are in the website's job list. "
                     "The search index and scraped_jobs.json are out of sync; tell the user to re-run ingest.")
         await _safe_send(send, {"action": "show_results", "ids": [h["job_id"] for h in shown]})
+        n = len(shown)
+        await _safe_send(send, {"action": "status", "text": f"Found {n} job{'s' if n != 1 else ''}", "kind": "found"})
 
         lines = [
             f"{h['job_id']} | {h['title']} | {h['pay'] or 'pay not listed'} | {h['domain']} | "
@@ -101,6 +103,7 @@ def make_tools(send: Send) -> list:
         job = jobs_data.get_job(job_id)
         if not job:
             return "No job with that ID. Only use Job IDs returned by search_jobs."
+        await _safe_send(send, {"action": "status", "text": f"Opening {job['title'].strip()}…", "kind": "open"})
         await _safe_send(send, {"action": "show_job", "job_id": job["id"]})
         return _describe(job)
 
@@ -110,12 +113,14 @@ def make_tools(send: Send) -> list:
         job = jobs_data.get_job(job_id)
         if not job:
             return "No job with that ID. Only use Job IDs returned by search_jobs."
+        await _safe_send(send, {"action": "status", "text": "Pointing at Apply…", "kind": "apply"})
         await _safe_send(send, {"action": "highlight_apply", "job_id": job["id"]})
         return "The Apply button is pulsing. Tell the user to click it themselves; you cannot apply for them."
 
     @tool
     async def show_all_jobs() -> str:
         """Take the user's page back to the full list of jobs, without your picks."""
+        await _safe_send(send, {"action": "status", "text": "Showing all jobs", "kind": "open"})
         await _safe_send(send, {"action": "show_all"})
         return "The page now shows all jobs."
 

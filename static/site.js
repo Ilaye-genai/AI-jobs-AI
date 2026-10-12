@@ -203,6 +203,7 @@
 
   function showList() {
     document.title = "AI Jobs";
+    document.body.classList.remove("split-view");
     app.innerHTML = `
       <section class="hero" id="hero">
         <div>
@@ -264,13 +265,70 @@
     b.classList.add("pulse");
   }
 
+  // ------------------------------------------------------------------ split view
+  // While the assistant has picks and a job is open, the page is split: the picks stay in a narrow list
+  // on the left, the opened job (description first) fills the big pane on the right.
+  function miniHtml(job, selected) {
+    return `
+      <a class="mini${selected ? " selected" : ""}" href="#/job/${encodeURIComponent(job.id)}" data-id="${esc(job.id)}"${selected ? ' aria-current="true"' : ""}>
+        <span class="tag">${esc(job.category)}</span>
+        <strong class="mini-title">${esc(job.title)}</strong>
+        <span class="sub">${join([job.company, job.employment, job.location])}</span>
+        ${job.pay_label ? `<span class="pay">${esc(job.pay_label)}${job.pay_model === "per-task" ? '<span class="note">paid per task</span>' : ""}</span>` : ""}
+      </a>`;
+  }
+
+  function splitListHtml(selectedId) {
+    const jobs = state.picks.jobs;
+    return `
+      <div class="split-head">
+        <strong>Picked for you</strong>
+        <span class="muted">${jobs.length} job${jobs.length === 1 ? "" : "s"}</span>
+        <button class="linklike" type="button" id="split-all">Show all jobs</button>
+      </div>
+      <div class="split-items">${jobs.map((j) => miniHtml(j, j.id === selectedId)).join("")}</div>`;
+  }
+
+  function mountSplit(selectedId) {
+    app.innerHTML = `<div class="split" id="split">
+      <aside class="split-list" id="split-list" aria-label="Other recommendations">${splitListHtml(selectedId)}</aside>
+      <section class="split-detail" id="split-detail" aria-live="polite"></section>
+    </div>`;
+    $("#split-all").addEventListener("click", showAll);
+  }
+
+  // Highlight the open job in the left list without rebuilding it, so its scroll position stays put.
+  function selectInSplit(id) {
+    const box = $("#split-list .split-items");
+    document.querySelectorAll("#split-list .mini").forEach((el) => {
+      const on = el.dataset.id === id;
+      el.classList.toggle("selected", on);
+      if (on) el.setAttribute("aria-current", "true");
+      else el.removeAttribute("aria-current");
+      if (on && box) {
+        const r = el.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        if (r.top < b.top) box.scrollTop -= b.top - r.top;
+        else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom;
+      }
+    });
+  }
+
   async function showJob(id) {
     const token = ++state.loadToken;
-    app.innerHTML = '<p class="empty">Loading…</p>';
+    const split = !!(state.picks && state.picks.jobs.length);
+    document.body.classList.toggle("split-view", split);
+    let target = app;
+    if (split) {
+      if (!$("#split")) mountSplit(id);
+      selectInSplit(id);
+      target = $("#split-detail");
+    }
+    target.innerHTML = '<p class="empty">Loading…</p>';
     try {
       const job = await api("/api/jobs/" + encodeURIComponent(id));
       if (token !== state.loadToken) return;
-      app.innerHTML = detailHtml(job);
+      target.innerHTML = detailHtml(job);
       document.title = `${job.title} · AI Jobs`;
       window.scrollTo({ top: 0 });
       if (state.pendingHighlight === id) {
@@ -280,7 +338,7 @@
     } catch (e) {
       if (token !== state.loadToken) return;
       const msg = e.message === "Not found" ? "That job is no longer listed." : esc(e.message);
-      app.innerHTML = `<div class="detail"><a class="back" href="#/">← All jobs</a><p class="empty">${msg}</p></div>`;
+      target.innerHTML = `<div class="detail"><a class="back" href="#/">← ${split ? "All picks" : "All jobs"}</a><p class="empty">${msg}</p></div>`;
     }
   }
 
@@ -340,7 +398,12 @@
       if (!data.jobs.length) return;
       state.picks = { jobs: data.jobs };
       if (!state.version) state.version = data.version;
-      go("#/");
+      if ($("#split")) {
+        // A job is already open next to the picks: refresh the list, keep the job on screen.
+        const m = location.hash.match(/^#\/job\/([^/?#]+)/);
+        $("#split-list").innerHTML = splitListHtml(m ? decodeURIComponent(m[1]) : null);
+        $("#split-all").addEventListener("click", showAll);
+      } else go("#/");
     } catch (e) {
       console.error("show_results failed", e);
     }
@@ -360,8 +423,15 @@
     showAll();
   }
 
-  function status({ text }) {
-    const label = $("#voice-label");
+  // The agent says what it is doing ("Searching jobs…"). The orb shows it big, under the animation.
+  // An empty text means the action is over.
+  function status({ text, kind, sub }) {
+    if (window.ORB) {
+      if (text) window.ORB.action(String(text).slice(0, 80), kind, sub);
+      else window.ORB.endAction();
+      return;
+    }
+    const label = $("#voice-label"); // fallback when orb.js is missing
     if (label && text) label.textContent = String(text).slice(0, 80);
   }
 

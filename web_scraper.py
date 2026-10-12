@@ -24,6 +24,8 @@ from langchain_core.tools import tool  # add @tool above web_crawler when you re
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
+from classify import clean_body  # strips the page header, so a "header only" scrape can be recognised
+
 LIST_URL = "https://www.micro1.ai/experts/opportunities"
 API_HINT = "/api/v1/job/portal"
 JOB_URL = "https://jobs.micro1.ai/post/{}"
@@ -31,6 +33,13 @@ JOB_URL = "https://jobs.micro1.ai/post/{}"
 MIN_CHARS = 200          # a scraped page shorter than this is treated as "not rendered" and retried
 PREVIEW_CHARS = 500      # description preview length when printing (use --full for everything)
 DEFAULT_CONCURRENCY = 4  # parallel job pages; raise carefully, each one is a browser tab
+
+# A job page only counts as scraped once it holds real description text. The header every page shows
+# (title, pay line, "Required Skills" list) can pass MIN_CHARS by itself when a job lists many skills,
+# which is how jobs ended up "scraped" with no description. Jobs are therefore judged by the text that
+# is left after that header is removed (see _job_quality).
+MIN_BODY_CHARS = 150
+RETRY_CONCURRENCY = 2    # retry_missing() is patient: fewer pages at a time, longer waits
 
 _crawler: AsyncWebCrawler | None = None
 _lock: asyncio.Lock | None = None
@@ -136,11 +145,43 @@ def _page_config(wait_until: str, delay: float, timeout_ms: int) -> CrawlerRunCo
 _ATTEMPTS = [("networkidle", 2.0, 30_000), ("domcontentloaded", 6.0, 45_000)]
 
 
-async def _fetch_page_text(url: str) -> str:
-    """Scrape one page to cleaned markdown. Raises RuntimeError if it can't get real content."""
+# retry_missing() waits much longer for the page's JavaScript to fill in the description.
+_PATIENT_ATTEMPTS = [("domcontentloaded", 12.0, 60_000), ("domcontentloaded", 30.0, 90_000)]
+
+
+def _job_quality(text: str, job: dict) -> int:
+    """How much real description a scraped job page holds, in characters.
+
+    That is the page text with everything the page always shows removed: the title, the pay line, the
+    "Required Skills" list and the Role Title / Role Type / Location lines. A page where only that header
+    has rendered so far scores 0, however long its skills list is.
+    """
+    skills = [re.sub(r"\s+", " ", str(s)).strip() for s in job.get("skills") or []]
+    return len(clean_body(text, job.get("title"), skills))
+
+
+async def _fetch_page_text(
+    url: str,
+    quality=len,
+    enough: int = MIN_CHARS,
+    accept_partial: bool = False,
+    attempts=None,
+) -> str:
+    """Scrape one page to cleaned markdown. Raises RuntimeError if it can't get real content.
+
+    Tries each entry of `attempts` (default _ATTEMPTS) in turn and returns the first page whose
+    quality(text) reaches `enough`.
+      quality         scores a page's text; the default is its length. Job pages pass a scorer that
+                      ignores the title / pay / skills header (see _job_quality), so a page where only
+                      the header has rendered is not mistaken for a complete one.
+      accept_partial  when no attempt reaches `enough`, return the best attempt instead of raising, as
+                      long as it holds some real content (a genuinely short posting).
+    The error says what the page contained, so a failure can be diagnosed from scraped_jobs.json.
+    """
     crawler = await get_crawler()
+    best, best_q = "", 0
     last_error = "unknown error"
-    for wait_until, delay, timeout in _ATTEMPTS:
+    for wait_until, delay, timeout in attempts or _ATTEMPTS:
         try:
             result = await crawler.arun(url=url, config=_page_config(wait_until, delay, timeout))
         except Exception as e:  # timeouts etc.
@@ -150,9 +191,18 @@ async def _fetch_page_text(url: str) -> str:
             last_error = result.error_message or "crawl failed"
             continue
         text = clean_markdown(str(result.markdown or ""))
-        if len(text) >= MIN_CHARS:
+        q = quality(text)
+        if q >= enough:
             return text
-        last_error = f"page rendered only {len(text)} chars"
+        if q > best_q:
+            best, best_q = text, q
+        seen = re.sub(r"\s+", " ", text)[:100]
+        if q == len(text):
+            last_error = f"page rendered only {len(text)} chars: {seen!r}"
+        else:
+            last_error = f"page had {len(text)} chars but only {q} of description text (page said: {seen!r})"
+    if accept_partial and best_q > 0:
+        return best
     raise RuntimeError(last_error)
 
 
@@ -382,8 +432,13 @@ def normalize(j: dict) -> dict:
     }
 
 
-async def enrich_jobs(jobs: list[dict], concurrency: int = DEFAULT_CONCURRENCY) -> None:
-    """Fetch each job page and store its cleaned content in job['description'] (in place)."""
+async def enrich_jobs(jobs: list[dict], concurrency: int = DEFAULT_CONCURRENCY, attempts=None) -> None:
+    """Fetch each job page and store its cleaned content in job['description'] (in place).
+
+    A page counts as scraped only when it holds real description text (MIN_BODY_CHARS once the page
+    header is removed); a genuinely short posting is still kept. If nothing usable comes back, the job
+    keeps whatever description it already had and job['scrape_error'] says what the page contained.
+    """
     sem = asyncio.Semaphore(concurrency)
     done = 0
     total = len(jobs)
@@ -392,14 +447,48 @@ async def enrich_jobs(jobs: list[dict], concurrency: int = DEFAULT_CONCURRENCY) 
         nonlocal done
         async with sem:
             try:
-                job["description"] = await _fetch_page_text(job["url"])
+                job["description"] = await _fetch_page_text(
+                    job["url"],
+                    quality=lambda text: _job_quality(text, job),
+                    enough=MIN_BODY_CHARS,
+                    accept_partial=True,
+                    attempts=attempts,
+                )
+                job["scrape_error"] = None
             except Exception as e:
                 job["scrape_error"] = str(e)
             done += 1
-            status = "ok " if job["description"] else "ERR"
+            status = "ERR" if job["scrape_error"] else "ok "
             print(f"  [{done}/{total}] {status} {job['title'] or job['job_id']}")
 
     await asyncio.gather(*(one(j) for j in jobs if j["url"]))
+
+
+def needs_retry(job: dict) -> bool:
+    """True when a job has no real description text: its page failed, or only the header was captured."""
+    return bool(job.get("url")) and _job_quality(job.get("description") or "", job) == 0
+
+
+async def retry_missing(jobs: list[dict], concurrency: int = RETRY_CONCURRENCY) -> int:
+    """Second chance for the jobs a scrape got no description for.
+
+    Works on records already in scraped_jobs.json and touches only the ones that need it. It is
+    patient: longer waits for the page's JavaScript and fewer pages at a time. Updates `jobs` in
+    place and returns how many now have a description. Jobs that still fail keep their old record,
+    with scrape_error saying what the page contained.
+    """
+    todo = [j for j in jobs if needs_retry(j)]
+    if not todo:
+        print("Every job already has a description.")
+        return 0
+    print(f"Retrying {len(todo)} of {len(jobs)} jobs that have no description (concurrency={concurrency}) ...")
+    try:
+        await enrich_jobs(todo, concurrency, attempts=_PATIENT_ATTEMPTS)
+    finally:
+        await close_crawler()
+    fixed = sum(1 for j in todo if not needs_retry(j))
+    print(f"Fixed {fixed} of {len(todo)}.")
+    return fixed
 
 
 async def collect_jobs(limit: int | None = None, concurrency: int = DEFAULT_CONCURRENCY) -> list[dict]:

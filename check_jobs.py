@@ -47,6 +47,10 @@ def main() -> None:
             for item, n in rows[:8]:
                 print(f"  {item['job_id'][:8]}  {n:>5} chars  {ascii_safe(item.get('title') or '')}  err={item.get('scrape_error')}")
 
+    if header_only or no_text:
+        print("\nTo re-scrape only these jobs (patiently, 2 pages at a time) and update the website and search:")
+        print("    python ingest.py --retry-missing")
+
     if header_only:
         item = header_only[0][0]
         print(f"\nWhat was scraped for '{ascii_safe(item['title'])}':")
