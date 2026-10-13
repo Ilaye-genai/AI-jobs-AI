@@ -35,7 +35,7 @@ import jobs_data
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 AGENT_NAME = "jobs-agent"  # must match agent_name in voice_agent.py
-PUBLIC_DIR = Path(__file__).parent / "public"  # on Vercel this folder is served by the CDN, not by Python
+PUBLIC_DIR = Path(__file__).parent / "static"  # on Vercel this folder is served by the CDN, not by Python
 
 app = FastAPI(title="AI jobs board")
 
