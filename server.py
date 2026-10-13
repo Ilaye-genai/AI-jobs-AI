@@ -1,11 +1,17 @@
 """
 Website server: serves the job board, a small jobs API, and LiveKit room tokens.
 
-    python server.py            # then open http://localhost:8080
-    python voice_agent.py dev   # in a second terminal, so the voice agent can join
+    On Vercel   nothing to run: Vercel finds `app` below, serves everything in public/ itself (CDN),
+                and runs the /api and /token routes as one function. Set LIVEKIT_URL, LIVEKIT_API_KEY and
+                LIVEKIT_API_SECRET in the Vercel project settings (there is no .env there).
+    Locally     python server.py   (address printed on start; change it with HOST / PORT)
+
+The voice agent (voice_agent.py) is NOT part of this server and cannot run on Vercel: it is a long-running
+worker. Host it separately (see Dockerfile); it connects out to LiveKit, so this site never needs its address.
 
 Endpoints
-    GET /                    the job board (static/index.html)
+    GET /                    the job board (public/index.html)
+    GET /api/health          deployment check: how many jobs were found, which LiveKit variables are set
     GET /api/jobs            filtered list. Params: q, category, domain, level, employment, company,
                              skill, min_pay, sort (new|pay), limit, offset, ids (comma list, keeps order)
     GET /api/jobs/{job_id}   one job with its full description
@@ -29,7 +35,7 @@ import jobs_data
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 AGENT_NAME = "jobs-agent"  # must match agent_name in voice_agent.py
-STATIC_DIR = Path(__file__).parent / "static"
+PUBLIC_DIR = Path(__file__).parent / "public"  # on Vercel this folder is served by the CDN, not by Python
 
 app = FastAPI(title="AI jobs board")
 
@@ -68,6 +74,21 @@ def one_job(job_id: str) -> dict:
     return {k: v for k, v in job.items() if k != "search_text"}
 
 
+@app.get("/api/health")
+def health() -> dict:
+    """Open this first on a new deployment: it shows whether the data file and the settings made it."""
+    total, _ = jobs_data.search(
+        q="", category=None, domain=None, level=None, employment=None, company=None,
+        skill=None, min_pay=None, sort="new", limit=1, offset=0,
+    )
+    return {
+        "ok": total > 0,
+        "jobs": total,
+        "agent_name": AGENT_NAME,
+        "livekit_settings_present": {k: bool(os.getenv(k)) for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")},
+    }
+
+
 @app.get("/api/version")
 def version() -> dict:
     return {"version": jobs_data.version()}
@@ -96,15 +117,23 @@ def token() -> dict:
     return {"url": url, "token": jwt, "room": room}
 
 
+# Locally Python serves the page and its files. On Vercel public/ is handled by the CDN before this code runs,
+# so these are only a fallback, and they must never stop the app from starting when public/ is not in the bundle.
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    page = PUBLIC_DIR / "index.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="public/index.html is not part of this deployment")
+    return FileResponse(page)
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if (PUBLIC_DIR / "static").is_dir():
+    app.mount("/static", StaticFiles(directory=PUBLIC_DIR / "static"), name="static")
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("server:app", host="127.0.0.1", port=int(os.getenv("PORT", 8080)), reload=False)
+    host, port = os.getenv("HOST", "127.0.0.1"), int(os.getenv("PORT", 8080))
+    print(f"Job board: http://{host}:{port}")
+    uvicorn.run("server:app", host=host, port=port, reload=False)

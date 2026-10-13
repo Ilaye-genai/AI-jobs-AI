@@ -1,0 +1,6 @@
+# Everything, for working on your own machine:   pip install -r requirements-local.txt
+-r requirements.txt
+-r requirements-agent.txt
+
+# scraping (web_scraper.py, mercor.py). After installing, run once:  crawl4ai-setup
+crawl4ai

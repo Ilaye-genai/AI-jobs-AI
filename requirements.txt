@@ -20,4 +20,4 @@ langchain-groq
 # ---- Web server (next step) ----
 fastapi
 uvicorn
-playwright install
+playwright

@@ -94,6 +94,14 @@ def build_agent(send: Send):
     graph = create_agent(model, make_tools(send), system_prompt=SYSTEM_PROMPT)
     return speech_only(graph)
 
+def studio_graph():
+    """Entry for `langgraph dev` / LangGraph Studio. Page updates go nowhere here."""
+
+    async def send(message: dict) -> None:
+        print(f"[page <- {message}]")
+
+    return build_agent(send)
+
 
 async def chat() -> None:
     """Terminal test: streams the reply token by token and prints every page update."""

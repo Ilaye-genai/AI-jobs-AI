@@ -1,0 +1,12 @@
+# The VOICE AGENT only (voice_agent.py): what the Dockerfile installs. Not used by Vercel.
+python-dotenv
+qdrant-client
+fastembed
+langchain               # create_agent; brings langgraph and langchain-core
+langchain-deepseek
+livekit-agents
+livekit-plugins-deepgram
+livekit-plugins-groq
+livekit-plugins-silero
+livekit-plugins-langchain
+livekit-plugins-synthesia
