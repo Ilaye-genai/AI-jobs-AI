@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 Send = Callable[[dict], Awaitable[None]]
 MAX_RESULTS = 6
+SEARCH_CANDIDATES = 10  # fewer candidates to rerank = a faster search
 DETAIL_CHARS = 1800  # how much of a description the agent gets to read when it opens a job
 
 
@@ -66,32 +67,53 @@ def make_tools(send: Send) -> list:
         await _safe_send(send, {"action": "status", "text": "Searching jobs…", "kind": "search"})
         pq = parse_query(query)
         after = datetime.now(timezone.utc) - timedelta(days=pq.days) if pq.days else None
-        try:
-            hits = await asyncio.to_thread(
-                vs.search_jobs, pq.semantic, limit=MAX_RESULTS,
+
+        def run() -> tuple[list[tuple[dict, dict]], int]:
+            """Search, then pair each hit with the website's copy of the job (same file the page reads)."""
+            hits = vs.search_jobs(
+                pq.semantic, limit=MAX_RESULTS, candidates=SEARCH_CANDIDATES,
                 min_pay=pq.min_pay, max_pay=pq.max_pay, posted_after=after,
             )
+            pairs = [(h, jobs_data.get_job(h["job_id"])) for h in hits]
+            return [(h, j) for h, j in pairs if j], len(hits)
+
+        try:
+            found, raw_hits = await asyncio.to_thread(run)
         except Exception as e:
+            logger.exception("search failed")
+            # Shown on the visitor's page too, so a broken deployment (no database, bad key) is visible.
+            await _safe_send(send, {
+                "action": "error",
+                "text": "The job search failed",
+                "hint": "Usually the vector database is not reachable from the agent host: check QDRANT_URL and QDRANT_API_KEY, and that python ingest.py has been run against that database.",
+                "detail": f"{type(e).__name__}: {e}"[:500],
+            })
             return f"The job search failed: {e}"
-        if not hits:
+        if not found:
+            if raw_hits:  # the database returned jobs, but the website does not have them
+                await _safe_send(send, {
+                    "action": "error",
+                    "text": "The search index and the website's job list disagree",
+                    "hint": "The search found jobs that are not in this deployment's scraped_jobs.json. Redeploy the website and the agent from the same scraped_jobs.json, or re-run python ingest.py.",
+                    "detail": f"{raw_hits} hits, none found in the website's list",
+                })
+                return ("The search found jobs, but none are in the website's job list. "
+                        "The search index and scraped_jobs.json are out of sync; tell the user something is wrong on our side.")
             applied = pq.describe()
             return "No jobs matched." + (f" Filters applied: {applied}. Offer to relax them." if applied else "")
 
-        # Only jobs the website can actually show: the page loads them from scraped_jobs.json.
-        shown = [h for h in hits if jobs_data.get_job(h["job_id"])]
-        if not shown:
-            return ("The search found jobs, but none are in the website's job list. "
-                    "The search index and scraped_jobs.json are out of sync; tell the user to re-run ingest.")
-        await _safe_send(send, {"action": "show_results", "ids": [h["job_id"] for h in shown]})
-        n = len(shown)
+        await _safe_send(send, {"action": "show_results", "ids": [j["id"] for _, j in found]})
+        n = len(found)
         await _safe_send(send, {"action": "status", "text": f"Found {n} job{'s' if n != 1 else ''}", "kind": "found"})
 
         lines = [
-            f"{h['job_id']} | {h['title']} | {h['pay'] or 'pay not listed'} | {h['domain']} | "
-            f"skills: {', '.join(h['skills'][:5])} | {h['summary'][:160]}"
-            for h in shown
+            f"{j['id']} | {j['title']} | {j['pay_label'] or 'pay not listed'} | {j['domain']} | "
+            f"location: {j['location']} | skills: {', '.join(j['skills'][:5])} | {j['summary'][:160]}"
+            for _, j in found
         ]
-        return f"{len(shown)} jobs are now shown on the user's page, best match first:\n" + "\n".join(lines)
+        return (f"{n} jobs are now shown on the user's page, best match first. "
+                "This list is for you only: do NOT read it aloud, just name the best two briefly.\n"
+                + "\n".join(lines))
 
     @tool
     async def show_job(job_id: str) -> str:

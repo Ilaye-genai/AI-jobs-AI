@@ -1,21 +1,4 @@
-
-langchain-core
-
-# ---- Vector DB + embeddings (needed now) ----
-qdrant-client
-fastembed
-python-dotenv
-
-# ---- Voice agent (next step) ----
-livekit-agents
-livekit-api
-livekit-plugins-deepgram
-livekit-plugins-groq
-livekit-plugins-silero
-livekit-plugins-langchain
-langgraph
-langchain-groq
-
-# ---- Web server (next step) ----
 fastapi
 uvicorn
+python-dotenv
+livekit-api
