@@ -25,4 +25,4 @@ USER appuser
 RUN python -c "import vector_store as vs; vs.get_embedder().dim; r = vs.get_reranker(); r and r.model" || true
 
 # A fixed command that starts the worker: it connects out to LiveKit and waits for visitors to join.
-CMD ["python", "voice_agent.py", "start"]
+CMD ["python", "voice_agent.py dev", "start"]
