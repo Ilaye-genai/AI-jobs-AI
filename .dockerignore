@@ -11,3 +11,5 @@ realtime-ai-avatar/
 qdrant_data/
 results.txt
 Dockerfile
+mercor.py
+web_scraper.py

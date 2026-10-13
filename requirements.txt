@@ -1,5 +1,4 @@
-# ---- Scraping (you already have these) ----
-crawl4ai
+
 langchain-core
 
 # ---- Vector DB + embeddings (needed now) ----
