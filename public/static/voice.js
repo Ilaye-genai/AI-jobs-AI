@@ -17,6 +17,72 @@
   const assistant = document.getElementById("assistant");
   const video = document.getElementById("avatar-video");
   const sound = document.getElementById("sound-btn");
+
+  // Drag Ella's floating card with the dedicated handle. Pointer events work for mouse and touch.
+  const dragHandle = document.getElementById("assistant-drag");
+  if (dragHandle) {
+    let drag = null;
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
+
+    // Restore the last position when the browser permits local storage.
+    try {
+      const saved = JSON.parse(localStorage.getItem("ella-assistant-position") || "null");
+      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+        const r = assistant.getBoundingClientRect();
+        assistant.style.left = clamp(saved.x, 0, innerWidth - r.width) + "px";
+        assistant.style.top = clamp(saved.y, 0, innerHeight - r.height) + "px";
+        assistant.style.right = "auto";
+        assistant.style.bottom = "auto";
+      }
+    } catch {}
+
+    dragHandle.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      const rect = assistant.getBoundingClientRect();
+      drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+        left: rect.left, top: rect.top, moved: false };
+      dragHandle.setPointerCapture?.(event.pointerId);
+      assistant.classList.add("dragging");
+      event.preventDefault();
+    });
+
+    dragHandle.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      const rect = assistant.getBoundingClientRect();
+      const left = clamp(drag.left + dx, 0, innerWidth - rect.width);
+      const top = clamp(drag.top + dy, 0, innerHeight - rect.height);
+      assistant.style.left = left + "px";
+      assistant.style.top = top + "px";
+      assistant.style.right = "auto";
+      assistant.style.bottom = "auto";
+    });
+
+    const finishDrag = (event) => {
+      if (!drag || (event && event.pointerId !== drag.pointerId)) return;
+      assistant.classList.remove("dragging");
+      try {
+        const rect = assistant.getBoundingClientRect();
+        localStorage.setItem("ella-assistant-position", JSON.stringify({ x: rect.left, y: rect.top }));
+      } catch {}
+      drag = null;
+    };
+    dragHandle.addEventListener("pointerup", finishDrag);
+    dragHandle.addEventListener("pointercancel", finishDrag);
+
+    window.addEventListener("resize", () => {
+      if (drag) return;
+      const rect = assistant.getBoundingClientRect();
+      const left = clamp(rect.left, 0, innerWidth - rect.width);
+      const top = clamp(rect.top, 0, innerHeight - rect.height);
+      assistant.style.left = left + "px";
+      assistant.style.top = top + "px";
+      assistant.style.right = "auto";
+      assistant.style.bottom = "auto";
+    });
+  }
   const IDLE_TEXT = "Talk to your job assistant";
   const LIVE_TEXT = "Live: just talk";
   // LiveKit's agent states -> the orb's states
