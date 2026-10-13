@@ -42,3 +42,5 @@ dist/
 outputs/
 generated/
 .langgraph_api/
+mercor.py
+web_scraper.py

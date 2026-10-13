@@ -3,4 +3,4 @@
 -r requirements-agent.txt
 
 # scraping (web_scraper.py, mercor.py). After installing, run once:  crawl4ai-setup
-crawl4ai
+#crawl4ai
