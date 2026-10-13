@@ -127,8 +127,8 @@ def index() -> FileResponse:
     return FileResponse(page)
 
 
-if PUBLIC_DIR.is_dir():
-    app.mount("/static", StaticFiles(directory=str(PUBLIC_DIR)), name="static")
+if (PUBLIC_DIR / "static").is_dir():
+    app.mount("/static", StaticFiles(directory=str(PUBLIC_DIR / "static")), name="static")
 
 
 if __name__ == "__main__":
