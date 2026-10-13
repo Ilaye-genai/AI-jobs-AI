@@ -390,6 +390,16 @@
 
   // ------------------------------------------------------------------ what the voice agent can do
   // The agent only ever sends Job IDs; the page loads the jobs itself from /api/jobs.
+  // The orb (static/orb.js) plays a short animation for each thing the agent does. It is optional:
+  // if orb.js is missing, or anything goes wrong in it, the page action must still happen.
+  function orbAction(text, kind) {
+    try {
+      if (window.ORB) window.ORB.action(text, kind);
+    } catch (e) {
+      console.warn("orb action failed", e);
+    }
+  }
+
   async function show_results({ ids }) {
     const list = (ids || []).filter(Boolean);
     if (!list.length) return;
@@ -398,6 +408,7 @@
       if (!data.jobs.length) return;
       state.picks = { jobs: data.jobs };
       if (!state.version) state.version = data.version;
+      orbAction("Found your matches", "found");
       if ($("#split")) {
         // A job is already open next to the picks: refresh the list, keep the job on screen.
         const m = location.hash.match(/^#\/job\/([^/?#]+)/);
@@ -410,11 +421,14 @@
   }
 
   function show_job({ job_id }) {
-    if (job_id) go("#/job/" + encodeURIComponent(job_id));
+    if (!job_id) return;
+    orbAction("Opening the job…", "open");
+    go("#/job/" + encodeURIComponent(job_id));
   }
 
   function highlight_apply({ job_id }) {
     if (!job_id) return;
+    orbAction("Pointing at Apply…", "apply");
     state.pendingHighlight = job_id;
     go("#/job/" + encodeURIComponent(job_id));
   }
