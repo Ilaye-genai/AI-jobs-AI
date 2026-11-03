@@ -43,4 +43,6 @@ outputs/
 generated/
 .langgraph_api/
 mercor.py
-web_scraper.py
+web_scraper.
+
+livekit.toml

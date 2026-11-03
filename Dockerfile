@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN adduser --disabled-password --gecos "" --uid 10001 appuser
 WORKDIR /app
 
-COPY requirements-agent.txt .
-RUN pip install -r requirements-agent.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 COPY --chown=appuser:appuser . .
 USER appuser
